@@ -14,18 +14,19 @@ int main(int argc, char **argv)
 		auto start = std::chrono::high_resolution_clock::now();
 		p_controller->ComputeControlAction();
 		auto end = std::chrono::high_resolution_clock::now();
-		auto duration_control_action = end - start;
-		
+		double duration_control_action = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0;
+
 		start = std::chrono::high_resolution_clock::now();
 		ros::spinOnce();
 		end = std::chrono::high_resolution_clock::now();
-		auto duration_spin_once = end - start;
+		double duration_spin_once = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0;
 
-		if(r.cycleTime() > r.expectedCycleTime() )
+		if( r.cycleTime() > r.expectedCycleTime() )
 		{
-			ROS_INFO("Cycle exceed expected cycle time: %lf ms", r.cycleTime().toSec() * 1000.0 );
-			ROS_INFO("ComputeControlAction took %ld ns", duration_control_action);
-			ROS_INFO("spinOnce took %ld ns", duration_spin_once);
+			// ROS_INFO("Cycle time exceed robot control loop");
+			// ROS_INFO("Cycle time=%lf [ms], expected cycle time:%lf [ms]", r.cycleTime().toSec() * 1000.0, r.expectedCycleTime().toSec() * 1000.0 );
+			// ROS_INFO("ComputeControlAction took %lf [ms]", duration_control_action);
+			// ROS_INFO("spinOnce took %lf [ms]\n", duration_spin_once);
 		}
 		r.sleep();
 	}

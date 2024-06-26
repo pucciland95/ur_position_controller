@@ -57,7 +57,7 @@ Matrix6d Controller::ComputeGeometricalJacobian()
     link5 = this->GetTransform(this->tf_reference_name, "wrist_2_link");
     link6 = this->GetTransform(this->tf_reference_name, "wrist_3_link");
   }
-  catch(const std::exception& e)
+  catch (const std::exception& e)
   {
     ROS_WARN("An error occurred when computing Jacobian: %s", e.what());
     return jacobian.setZero();
@@ -139,17 +139,20 @@ void Controller::DesiredPoseCallback(const geometry_msgs::PoseStamped& msg)
 
   // Interpolator
   // Position part
-  // TimeLawShrPtr pTimeLawPosition = std::make_shared<QuinticTimeLaw>(desired_position, desired_position_prev, desired_vel, desired_vel_prev, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), delta_time);
+  // TimeLawShrPtr pTimeLawPosition = std::make_shared<QuinticTimeLaw>(desired_position, desired_position_prev, desired_vel, desired_vel_prev, Eigen::Vector3d::Zero(), Eigen::Vector3d::Zero(), delta_time); 
   TimeLawShrPtr pTimeLawPosition = std::make_shared<CubicalTimeLaw>(desired_position, desired_position_prev, desired_vel, desired_vel_prev, delta_time);
-  auto positionPathFunction = [desired_position, desired_position_prev, pTimeLawPosition](double time) -> Eigen::Vector3d
-  {
+  // TimeLawShrPtr pTimeLawPosition = std::make_shared<LinearTimeLaw>(desired_position, desired_position_prev, delta_time);
+  auto positionPathFunction = [desired_position, desired_position_prev, pTimeLawPosition](double time) -> Eigen::Vector3d {
     Eigen::Vector3d diff = desired_position - desired_position_prev;
     Eigen::Vector3d p;
-    if(diff.norm() == 0)
+    if (diff.norm() == 0)
       p = desired_position;
     else
     {
-      double s = pTimeLawPosition->evaluate(time);
+      double temp = pTimeLawPosition->evaluate(time) / (diff).norm();
+      if(temp < 0.0 || temp > 1.0)
+        std::cout << "s(t)/diff.norm() " << temp << std::endl;
+
       p = desired_position_prev + pTimeLawPosition->evaluate(time) * (diff) / (diff).norm();
     }
     return p;
@@ -158,18 +161,19 @@ void Controller::DesiredPoseCallback(const geometry_msgs::PoseStamped& msg)
   this->interpolator_position = Interpolator<Eigen::Vector3d>(positionPathFunction, delta_time);
   auto position_result = this->interpolator_position.discretiseTrajectory(this->robot_loop_rate, this->start_time);
   std::list<Eigen::Vector3d> new_positions = std::get<0>(position_result);
-  double position_start_time = std::get<1>(position_result);
+  double position_start_time = 1.0/this->robot_loop_rate - std::get<1>(position_result);
+  // std::cout << "New positions: " << new_positions.size() << std::endl;
   this->buffered_position.insert(this->buffered_position.end(), new_positions.begin(), new_positions.end());
 
   // Orientation part
   Eigen::Vector3d desired_axis = Eigen::AngleAxisd(delta_R).axis();
 
-  // TimeLawShrPtr pTimeLawOrientation = std::make_shared<QuinticTimeLaw>(desired_angle, 0.0, desired_omega, desired_omega_prev, 0.0, 0.0, delta_time);
+  // TimeLawShrPtr pTimeLawOrientation = std::make_shared<QuinticTimeLaw>(desired_angle, 0.0, desired_omega, desired_omega_prev, 0.0, 0.0, delta_time); 
   TimeLawShrPtr pTimeLawOrientation = std::make_shared<CubicalTimeLaw>(desired_angle, 0.0, desired_omega, desired_omega_prev, delta_time);
-  auto orientationPathFunction = [desired_R_prev, desired_angle, desired_axis, desired_omega, pTimeLawOrientation](double time) -> Eigen::Matrix3d
-  {
-    double current_angle;;
-    if( desired_angle == 0 )
+  // TimeLawShrPtr pTimeLawOrientation = std::make_shared<LinearTimeLaw>(desired_angle, 0.0, delta_time);
+  auto orientationPathFunction = [desired_R_prev, desired_angle, desired_axis, desired_omega, pTimeLawOrientation](double time) -> Eigen::Matrix3d {
+    double current_angle;
+    if (desired_angle == 0)
       current_angle = desired_angle;
     else
       current_angle = 0 + pTimeLawOrientation->evaluate(time) * (desired_angle - 0) / (desired_angle - 0);
@@ -182,9 +186,10 @@ void Controller::DesiredPoseCallback(const geometry_msgs::PoseStamped& msg)
   this->interpolator_orientation = Interpolator<Eigen::Matrix3d>(orientationPathFunction, delta_time);
   auto orientation_result = this->interpolator_orientation.discretiseTrajectory(this->robot_loop_rate, this->start_time);
   std::list<Eigen::Matrix3d> new_orientation = std::get<0>(orientation_result);
-  double orientation_start_time = std::get<1>(orientation_result);
+  double orientation_start_time = 1.0/this->robot_loop_rate - std::get<1>(orientation_result);
+  // std::cout << "New orientation: " << new_orientation.size() << std::endl;
   this->buffered_orientation.insert(this->buffered_orientation.end(), new_orientation.begin(), new_orientation.end());
-  
+
   // Updating desired position, orientation, velocity, angular velocity and time_prev
   this->desired_position_prev = desired_position;
   this->desired_R_prev = desired_R;
@@ -198,7 +203,7 @@ void Controller::DesiredPoseCallback(const geometry_msgs::PoseStamped& msg)
 
 void Controller::ComputeControlAction()
 {
-  if(this->buffered_position.empty() || this->buffered_orientation.empty())
+  if (this->buffered_position.empty() || this->buffered_orientation.empty())
     return;
 
   // Getting feedback
@@ -208,16 +213,17 @@ void Controller::ComputeControlAction()
     this->tcp_position = tf2::transformToEigen(tcp_pose).translation();
     this->tcp_orientation = tf2::transformToEigen(tcp_pose).rotation();
   }
-  catch(const std::exception& e)
+  catch (const std::exception& e)
   {
-    ROS_WARN("An error occurred when getting transform between %s and %s: %s", this->tf_reference_name.c_str(), this->tf_tcp_name.c_str(), e.what());
+    ROS_WARN("An error occurred when getting transform between %s and %s: %s", this->tf_reference_name.c_str(),
+             this->tf_tcp_name.c_str(), e.what());
   }
-  
+
   Eigen::Vector3d setpoint_position = this->buffered_position.front();
   Eigen::Matrix3d setpoint_orientation = this->buffered_orientation.front();
   this->buffered_position.pop_front();
   this->buffered_orientation.pop_front();
-  
+
   // Debuggin stuff that needs to be removed
   geometry_msgs::Pose temp;
   temp.position.x = setpoint_position.x();
@@ -227,19 +233,17 @@ void Controller::ComputeControlAction()
 
   // ---------------------------------------
 
-  // std::cout << "buffered_position size " << this->buffered_position.size() << std::endl;
-
   // Computing error
   Eigen::Vector3d position_error = setpoint_position - this->tcp_position;
   Eigen::Vector3d orientation_error = ComputeOrientationError(this->tcp_orientation, setpoint_orientation);
 
-  if( std::isnan(position_error[0]) || std::isnan(position_error[1]) || std::isnan(position_error[2]) ||
-      std::isnan(orientation_error[0]) || std::isnan(orientation_error[1]) || std::isnan(orientation_error[2]) )
+  if (std::isnan(position_error[0]) || std::isnan(position_error[1]) || std::isnan(position_error[2]) ||
+      std::isnan(orientation_error[0]) || std::isnan(orientation_error[1]) || std::isnan(orientation_error[2]))
     return;
 
-  if( position_error.norm() == 0.0 && orientation_error.norm() == 0 )
+  if (position_error.norm() == 0.0 && orientation_error.norm() == 0)
     return;
-    
+
   // Computing control action
   Eigen::Vector3d control_input_p = Kp.cwiseProduct(position_error);
   Eigen::Vector3d control_input_o = Ko.cwiseProduct(orientation_error);
@@ -250,7 +254,7 @@ void Controller::ComputeControlAction()
   // Computing Jacobian
   Matrix6d Jg = this->ComputeGeometricalJacobian();
 
-  if(Jg.determinant() == 0 || Jg.isZero())
+  if (Jg.determinant() == 0 || Jg.isZero())
     return;
 
   Vector6d joint_velocities = Jg.inverse() * control_input;
@@ -284,24 +288,24 @@ Controller::Controller(ros::NodeHandle& nh, double control_loop_rate)
 
   // Publisher
   std::string topic_input_commands_name = "/joint_group_vel_controller/command";  // TODO: parametrise
-  this->joint_velocity_pub = nh.advertise<std_msgs::Float64MultiArray>(topic_input_commands_name, 1);
-  this->desired_pose_interpolated_pub = nh.advertise<geometry_msgs::Pose>("desired_pose_interpolated", 1);
+  this->joint_velocity_pub = nh.advertise<std_msgs::Float64MultiArray>(topic_input_commands_name, 100);
+  this->desired_pose_interpolated_pub = nh.advertise<geometry_msgs::Pose>("desired_pose_interpolated", 100);
 
   // Subscriber
-  this->desired_pose_sub = nh.subscribe("desired_pose", 1000, &Controller::DesiredPoseCallback, this);
+  this->desired_pose_sub = nh.subscribe("desired_pose", 100, &Controller::DesiredPoseCallback, this);
 
   // Getting first msg for desired pose
-  boost::shared_ptr<geometry_msgs::PoseStamped const> sharedPtr =
-      ros::topic::waitForMessage<geometry_msgs::PoseStamped>("desired_pose", ros::Duration(5));
-  if (sharedPtr == NULL)
-    ROS_INFO("No desired_pose messages received");
-  else
+  boost::shared_ptr<geometry_msgs::PoseStamped const> sharedPtr = NULL;
+  while (sharedPtr == NULL)
   {
-    Eigen::Affine3d desired_pose;
-    Eigen::fromMsg(sharedPtr->pose, desired_pose);
-    this->desired_position_prev = desired_pose.translation();
-    this->desired_R_prev = desired_pose.rotation();
+    sharedPtr = ros::topic::waitForMessage<geometry_msgs::PoseStamped>("desired_pose", ros::Duration(5));
+    ROS_INFO("No desired_pose messages received");
   }
+
+  Eigen::Affine3d desired_pose;
+  Eigen::fromMsg(sharedPtr->pose, desired_pose);
+  this->desired_position_prev = desired_pose.translation();
+  this->desired_R_prev = desired_pose.rotation();
 
   // Creating the TF listener
   this->pTfListener = new tf2_ros::TransformListener(this->tfBuffer);
@@ -310,8 +314,9 @@ Controller::Controller(ros::NodeHandle& nh, double control_loop_rate)
   this->Kp = Eigen::Vector3d(2.0, 2.0, 2.0);  // TODO: Parametrise
   this->Ko = Eigen::Vector3d(1.0, 1.0, 1.0);  // TODO: Parametrise
 
-  this->tf_reference_name = "tabletop"; // TODO: Parametrise -> Set it accordingly to the frame_id of the message coming from topic /desired_pose?
-  this->tf_tcp_name = "flange";         // TODO: Parametrise
+  this->tf_reference_name = "tabletop";  // TODO: Parametrise -> Set it accordingly to the frame_id of the message
+                                         // coming from topic /desired_pose?
+  this->tf_tcp_name = "flange";          // TODO: Parametrise
 
   // Setting time
   this->prev_time = std::chrono::high_resolution_clock::now();

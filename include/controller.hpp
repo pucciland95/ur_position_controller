@@ -156,7 +156,6 @@ private:
     this->a2 = (-3.0 * (s_ti - s_tf) - (2.0 * s_dot_ti + s_dot_tf) * delta_time) / delta_time / delta_time;
     this->a3 = (2.0 * (s_ti - s_tf) + (s_dot_ti + s_dot_tf) * delta_time) / delta_time / delta_time / delta_time;
 
-    this->max_s = s_tf;
     this->trajectory_duration = delta_time;
   }
 
@@ -164,7 +163,59 @@ private:
   double a1;
   double a2;
   double a3;
-  double max_s;
+
+};
+
+class LinearTimeLaw : public TimeLaw
+{
+public:
+  LinearTimeLaw(Eigen::Vector3d final_position, Eigen::Vector3d start_position, double delta_time)
+  {
+    double s_ti = 0.0;
+    double s_tf = (final_position - start_position).norm() / delta_time;
+
+    this->initialise(s_ti, s_tf, delta_time);
+  }
+
+  
+  LinearTimeLaw(double final_orientation, double start_orientation, double delta_time)
+  {
+    double s_ti = start_orientation;
+    double s_tf = final_orientation - start_orientation;
+
+    this->initialise(s_ti, s_tf, delta_time);
+  }
+
+  double evaluate(double t)
+  {
+    double s = a0 + a1*t;
+
+    return s;
+  }
+
+  double evaluateDerivative(double t)
+  {
+    return a1;
+  }
+
+  std::vector<double> getParameters()
+  {
+    std::vector<double> parameters = {a0, a1};
+    return parameters;
+  }
+
+private:
+
+  void initialise(double s_ti, double s_tf, double delta_time)
+  {
+    this->a0 = s_ti;
+    this->a1 = s_tf;
+
+    this->trajectory_duration = delta_time;
+  }
+
+  double a0;
+  double a1;
 
 };
 
@@ -187,6 +238,7 @@ public:
     double time_remaining;
 
     double time = start_time;
+
     while( time < trajectory_duration )
     {
       ReturnType sample = pathFunction(time);
