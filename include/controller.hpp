@@ -10,15 +10,17 @@
 
 #include "ros/ros.h"
 #include "std_msgs/Float64MultiArray.h"
-#include "tf2_ros/transform_listener.h"
+// #include "tf2_ros/transform_listener.h"
 #include "tf2_eigen/tf2_eigen.h"
-#include "tf2_geometry_msgs/tf2_geometry_msgs.h"
+// #include "tf2_geometry_msgs/tf2_geometry_msgs.h"
 #include "geometry_msgs/TransformStamped.h"
 #include "geometry_msgs/TwistStamped.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "sensor_msgs/JointState.h"
+#include "../include/kinematics.hpp"
 
-typedef Eigen::Matrix<double, 6, 6> Matrix6d;
-typedef Eigen::Matrix<double, 6, 1> Vector6d;
+typedef std::shared_ptr<Kinematics> KinematicPtr;
+
 
 class TimeLaw
 {
@@ -266,7 +268,7 @@ public:
   void ComputeControlAction();
 
 private:
-  void JointStateCallback(const sensor_msgs::JointStatePtr& msg);
+  void JointStateCallback(const sensor_msgs::JointState& msg);
   void DesiredPoseCallback(const geometry_msgs::PoseStamped& msg);
 
   geometry_msgs::Transform GetTransform(std::string parent, std::string child);
@@ -289,8 +291,8 @@ private:
   ros::Timer control_input_timer;
 
   // Tf listener
-  tf2_ros::Buffer tfBuffer;
-  tf2_ros::TransformListener* pTfListener;
+  // tf2_ros::Buffer tfBuffer;
+  // tf2_ros::TransformListener* pTfListener;
 
   // ------------------------------------- //
   // --------- Class parameters ---------- //
@@ -311,8 +313,8 @@ private:
   double desired_omega_dot_prev = 0;
 
   // Robot state (joints, tcp pose and velocity)
-  Vector6d joint_position;
-  Vector6d joint_velocity;
+  Vector6d joint_position = Vector6d::Zero();
+  // Vector6d joint_velocity; // TODO: remove?
   Eigen::Vector3d tcp_position;
   Eigen::Matrix3d tcp_orientation;
 
@@ -334,8 +336,13 @@ private:
   Interpolator<Eigen::Vector3d> interpolator_position;
   Interpolator<Eigen::Matrix3d> interpolator_orientation;
 
+  // Kinematics
+  KinematicPtr p_robot_kinematics;
+
   // Debugging variables that will be cancelled
   ros::Publisher desired_pose_interpolated_pub;
+  ros::Publisher position_error_pub;
+  ros::Publisher feedback_pub;
 };
 
 #endif

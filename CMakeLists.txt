@@ -18,6 +18,8 @@ find_package(catkin REQUIRED COMPONENTS
   tf2_geometry_msgs
   Eigen3
   sensor_msgs
+  kdl_parser
+  eigen_conversions
 )
 
 ## System dependencies are found with CMake's conventions
@@ -143,7 +145,7 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/GofaPositionController_node.cpp)
 
-add_executable(position_controller src/controller_main.cpp src/controller.cpp)
+add_executable(position_controller src/controller_main.cpp src/controller.cpp src/kinematics.cpp)
 target_link_libraries(position_controller ${catkin_LIBRARIES})
 
 ## Rename C++ executable without prefix
